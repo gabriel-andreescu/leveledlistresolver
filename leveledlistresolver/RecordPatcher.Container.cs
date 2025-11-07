@@ -27,8 +27,7 @@ namespace leveledlistresolver
             setter = default;
 
             var extentContexts = Program
-                .LinkCache.GetExtentContexts<IContainerGetter>(formKey)
-                .ToArray();
+                .LinkCache.GetExtentContexts<IContainerGetter>(formKey);
             if (extentContexts.Length < 2)
             {
                 return false;
@@ -64,23 +63,23 @@ namespace leveledlistresolver
             copy.VersionControl = Utility.Timestamp;
             copy.Items = [];
 
-            bool a = !string.Equals(
+            bool hasEditorIdConflict = !string.Equals(
                 lowest.EditorID,
                 copy.EditorID,
                 StringComparison.InvariantCulture
             );
-            bool b = !copy.Equals(lowest, ContMask2);
+            bool hasFlagsConflict = !copy.Equals(lowest, ContMask2);
 
             if (string.IsNullOrWhiteSpace(copy.EditorID))
             {
                 copy.EditorID = Guid.NewGuid().ToString("n");
-                a = true;
+                hasEditorIdConflict = true;
             }
 
             foreach (var (_, record) in extentContexts[1..])
             {
                 if (
-                    !a
+                    !hasEditorIdConflict
                     && !string.Equals(
                         lowest.EditorID,
                         record.EditorID,
@@ -89,13 +88,13 @@ namespace leveledlistresolver
                 )
                 {
                     copy.EditorID = record.EditorID;
-                    a = true;
+                    hasEditorIdConflict = true;
                 }
 
-                if (!b && !lowest.Equals(record, ContMask2))
+                if (!hasFlagsConflict && !lowest.Equals(record, ContMask2))
                 {
                     copy.Flags = record.Flags;
-                    b = true;
+                    hasFlagsConflict = true;
                 }
             }
 
@@ -123,7 +122,7 @@ namespace leveledlistresolver
             );
             items.AddRange(disjunction);
 
-            copy.Items.AddRange(items.ConvertAll(static i => i.DeepCopy()));
+            copy.Items.AddRange(items.Select(static i => i.DeepCopy()));
 
             if (Program.Settings.VerboseLogging)
             {

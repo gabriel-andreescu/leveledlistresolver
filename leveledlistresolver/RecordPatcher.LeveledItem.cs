@@ -34,14 +34,12 @@ namespace leveledlistresolver
         {
             setter = default;
 
-            var extentContexts = Program
-                .LinkCache.GetExtentContexts<ILeveledItemGetter>(formKey)
-                .ToArray();
+            var extentContexts = Program.LinkCache.GetExtentContexts<ILeveledItemGetter>(formKey);
             if (extentContexts.Length < 2)
             {
                 if (extentContexts.Length == 0)
                     return false;
-                
+
                 var winning = extentContexts[0].Record;
                 if (winning.Entries?.Any(static i => i.IsNullEntry()) ?? false)
                 {
@@ -88,33 +86,40 @@ namespace leveledlistresolver
             copy.VersionControl = Utility.Timestamp;
             copy.Entries = [];
 
-            bool a = !string.Equals(
+            bool hasEditorIdConflict = !string.Equals(
                 lowest.EditorID,
                 copy.EditorID,
                 StringComparison.InvariantCulture
             );
-            bool b = !copy.Equals(lowest, LvliMask2);
+            bool hasPropertiesConflict = !copy.Equals(lowest, LvliMask2);
 
             if (string.IsNullOrWhiteSpace(copy.EditorID))
             {
                 copy.EditorID = Guid.NewGuid().ToString("n");
-                a = true;
+                hasEditorIdConflict = true;
             }
 
             foreach (var (_, record) in extentContexts[1..])
             {
-                if (!a && !string.Equals(lowest.EditorID, record.EditorID, StringComparison.InvariantCulture))
+                if (
+                    !hasEditorIdConflict
+                    && !string.Equals(
+                        lowest.EditorID,
+                        record.EditorID,
+                        StringComparison.InvariantCulture
+                    )
+                )
                 {
                     copy.EditorID = record.EditorID;
-                    a = true;
+                    hasEditorIdConflict = true;
                 }
 
-                if (!b && !lowest.Equals(record, LvliMask2))
+                if (!hasPropertiesConflict && !lowest.Equals(record, LvliMask2))
                 {
                     copy.ChanceNone = record.ChanceNone;
                     copy.Flags = record.Flags;
                     copy.Global.SetTo(record.Global);
-                    b = true;
+                    hasPropertiesConflict = true;
                 }
             }
 
@@ -181,7 +186,7 @@ namespace leveledlistresolver
             }
             else
             {
-                copy.Entries.AddRange(entries.ConvertAll(static i => i.DeepCopy()));
+                copy.Entries.AddRange(entries.Select(static i => i.DeepCopy()));
             }
 
             if (Program.Settings.VerboseLogging)

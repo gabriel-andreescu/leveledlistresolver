@@ -179,10 +179,10 @@ namespace leveledlistresolver
             where TGet : class, IMajorRecordGetter
         {
             var contexts = linkCache.ResolveAllSimpleContexts<TGet>(formKey).ToArray();
-            
+
             if (contexts.Length == 0)
-                throw new InvalidOperationException();
-            
+                throw new InvalidOperationException($"No contexts found for FormKey {formKey}");
+
             var origin = contexts[^1].Record;
 
             if (contexts.Length <= 2)
@@ -207,7 +207,7 @@ namespace leveledlistresolver
             return origin;
         }
 
-        internal static IEnumerable<IModContext<TGet>> GetExtentContexts<TGet>(
+        internal static IModContext<TGet>[] GetExtentContexts<TGet>(
             this ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
             FormKey formKey
         )
@@ -217,13 +217,12 @@ namespace leveledlistresolver
 
             if (arr.Length <= 2)
             {
-                if (arr.Length > 0)
-                    yield return arr[0];
-                yield break;
+                return arr.Length > 0 ? [arr[0]] : [];
             }
 
             HashSet<ModKey> refs = [];
             var keys = Array.ConvertAll(arr, i => i.ModKey);
+            List<IModContext<TGet>> result = [];
 
             foreach (var ctx in arr[..^1])
             {
@@ -236,14 +235,18 @@ namespace leveledlistresolver
                     if (index >= 0)
                     {
                         refs.UnionWith(
-                            linkCache.ListedOrder[index].MasterReferences.Select(static i => i.Master)
+                            linkCache
+                                .ListedOrder[index]
+                                .MasterReferences.Select(static i => i.Master)
                             ?? Enumerable.Empty<ModKey>()
                         );
                         refs.IntersectWith(keys);
                     }
-                    yield return ctx;
+                    result.Add(ctx);
                 }
             }
+
+            return [.. result];
         }
 
         internal static void Deconstruct<TGet>(
