@@ -14,9 +14,6 @@ namespace leveledlistresolver
 {
     public class Program
     {
-        public static ILinkCache<ISkyrimMod, ISkyrimModGetter> LinkCache { get; set; } =
-            new LoadOrder<ISkyrimModGetter>().ToImmutableLinkCache();
-
         private static Lazy<ProgramSettings> _lazySettings = null!;
         public static ProgramSettings Settings => _lazySettings.Value;
 
@@ -91,8 +88,6 @@ namespace leveledlistresolver
                 }
             }
 
-            LinkCache = loadOrder.ToMutableLinkCache(state.PatchMod);
-
             var enabledAndExisting = loadOrder
                 .PriorityOrder.OnlyEnabledAndExisting()
                 .ToImmutableArray();
@@ -117,9 +112,8 @@ namespace leveledlistresolver
                     .ThenBy(static i => i.FormKey.ID)
             )
             {
-                if (RecordPatcher.TryPatch(state, leveledItem, out LeveledItem? copy))
+                if (RecordPatcher.TryPatch(state, leveledItem, out LeveledItem? _))
                 {
-                    state.PatchMod.LeveledItems.Set(copy);
                     patchedItems++;
                 }
                 else
@@ -140,9 +134,8 @@ namespace leveledlistresolver
                     .ThenBy(static i => i.FormKey.ID)
             )
             {
-                if (RecordPatcher.TryPatch(state, leveledNpc, out LeveledNpc? copy))
+                if (RecordPatcher.TryPatch(state, leveledNpc, out LeveledNpc? _))
                 {
-                    state.PatchMod.LeveledNpcs.Set(copy);
                     patchedNpcs++;
                 }
                 else
@@ -163,9 +156,8 @@ namespace leveledlistresolver
                     .ThenBy(static i => i.FormKey.ID)
             )
             {
-                if (RecordPatcher.TryPatch(state, leveledSpell, out LeveledSpell? copy))
+                if (RecordPatcher.TryPatch(state, leveledSpell, out LeveledSpell? _))
                 {
-                    state.PatchMod.LeveledSpells.Set(copy);
                     patchedSpells++;
                 }
                 else

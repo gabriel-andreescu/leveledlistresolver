@@ -26,15 +26,14 @@ namespace leveledlistresolver
         {
             setter = default;
 
-            var extentContexts = Program
-                .LinkCache.GetExtentContexts<IContainerGetter>(formKey);
+            var extentContexts = state.LinkCache.GetExtentContexts<IContainerGetter>(formKey);
             if (extentContexts.Length < 2)
             {
                 return false;
             }
 
             var highest = extentContexts[0].Record;
-            var lowest = Program.LinkCache.GetLowestOverride<IContainerGetter>(formKey);
+            var lowest = state.LinkCache.GetLowestOverride<IContainerGetter>(formKey);
 
             bool hasConflict = false;
             foreach (var (_, record) in extentContexts[1..])
@@ -136,6 +135,9 @@ namespace leveledlistresolver
                 Console.WriteLine($"{copy.EditorID} [{formKey}]");
                 foreach (var ctx in extentContexts.Reverse())
                 {
+                    if (!state.LoadOrder.ContainsKey(ctx.ModKey))
+                        continue;
+                    
                     var masters = state
                         .LoadOrder[ctx.ModKey]
                         .Mod?.MasterReferences.Select(static i => i.Master)

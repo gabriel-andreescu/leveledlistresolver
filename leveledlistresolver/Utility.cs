@@ -141,7 +141,7 @@ namespace leveledlistresolver
 
         internal static bool IsNullOrEmptySublist(
             this ILeveledItemEntryGetter entry,
-            ILinkCache linkCache
+            ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache
         )
         {
             if (entry is { Data: null or { Reference.IsNull: true } })

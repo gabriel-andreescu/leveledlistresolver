@@ -34,7 +34,7 @@ namespace leveledlistresolver
         {
             setter = default;
 
-            var extentContexts = Program.LinkCache.GetExtentContexts<ILeveledNpcGetter>(formKey);
+            var extentContexts = state.LinkCache.GetExtentContexts<ILeveledNpcGetter>(formKey);
             if (extentContexts.Length < 2)
             {
                 if (extentContexts.Length == 0)
@@ -43,7 +43,7 @@ namespace leveledlistresolver
                 var winning = extentContexts[0].Record;
                 if (winning.Entries?.Any(static i => i.IsNullEntry()) ?? false)
                 {
-                    setter = winning.DeepCopy();
+                    setter = state.PatchMod.LeveledNpcs.GetOrAddAsOverride(winning);
                     if (Program.Settings.VerboseLogging)
                         Console.WriteLine(
                             $"Removed {setter.Entries!.RemoveAll(Utility.IsNullEntry)} null entries from {setter.EditorID} [{formKey}]{Environment.NewLine}"
@@ -57,7 +57,7 @@ namespace leveledlistresolver
             }
 
             var highest = extentContexts[0].Record;
-            var lowest = Program.LinkCache.GetLowestOverride<ILeveledNpcGetter>(formKey);
+            var lowest = state.LinkCache.GetLowestOverride<ILeveledNpcGetter>(formKey);
 
             bool hasConflict = false;
             foreach (var (_, record) in extentContexts[1..])
@@ -81,7 +81,7 @@ namespace leveledlistresolver
                 return false;
             }
 
-            var copy = highest.DeepCopy();
+            var copy = state.PatchMod.LeveledNpcs.GetOrAddAsOverride(highest);
             copy.FormVersion = 44;
             copy.VersionControl = Utility.Timestamp;
             copy.Entries = [];
@@ -147,7 +147,7 @@ namespace leveledlistresolver
             );
             entries.AddRange(disjunction);
             if (Program.Settings.RemoveEmptySublists)
-                entries.RemoveAll(i => i.IsNullOrEmptySublist(Program.LinkCache));
+                entries.RemoveAll(i => i.IsNullOrEmptySublist(state.LinkCache));
             else
                 entries.RemoveAll(Utility.IsNullEntry);
             entries.Sort(static (i, k) => (i.Data?.Level ?? 0).CompareTo(k.Data?.Level));
@@ -200,6 +200,9 @@ namespace leveledlistresolver
                 Console.WriteLine($"{copy.EditorID} [{formKey}]");
                 foreach (var ctx in extentContexts.Reverse())
                 {
+                    if (!state.LoadOrder.ContainsKey(ctx.ModKey))
+                        continue;
+
                     var masters = state
                         .LoadOrder[ctx.ModKey]
                         .Mod?.MasterReferences.Select(static i => i.Master)
