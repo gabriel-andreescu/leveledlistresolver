@@ -1,11 +1,11 @@
-﻿using Mutagen.Bethesda;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Synthesis;
 using Noggog;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace leveledlistresolver
 {
@@ -16,27 +16,38 @@ namespace leveledlistresolver
             FormVersion = false,
             VersionControl = false,
             Version2 = false,
-            Entries = false
+            Entries = false,
         };
 
         static readonly LeveledSpell.TranslationMask LvSpMask2 = new(false)
         {
             ChanceNone = true,
-            Flags = true
+            Flags = true,
         };
 
-        bool IRecordPatcher<ILeveledSpellGetter, LeveledSpell>.Try(IPatcherState<ISkyrimMod, ISkyrimModGetter> state, FormKey formKey, out LeveledSpell? setter)
+        bool IRecordPatcher<ILeveledSpellGetter, LeveledSpell>.Try(
+            IPatcherState<ISkyrimMod, ISkyrimModGetter> state,
+            FormKey formKey,
+            out LeveledSpell? setter
+        )
         {
             setter = default;
 
-            var extentContexts = Program.LinkCache.GetExtentContexts<ILeveledSpellGetter>(formKey).ToArray();
+            var extentContexts = Program
+                .LinkCache.GetExtentContexts<ILeveledSpellGetter>(formKey)
+                .ToArray();
             if (extentContexts.Length < 2)
             {
                 var winning = extentContexts[0].Record;
                 if (winning.Entries?.Any(static i => i.IsNullEntry()) ?? false)
                 {
                     setter = winning.DeepCopy();
-                    Console.WriteLine($"Removed {setter.Entries!.RemoveAll(Utility.IsNullEntry)} null entries from {setter.EditorID} [{formKey}]{Environment.NewLine}");
+                    if (Program.Settings.VerboseLogging)
+                        Console.WriteLine(
+                            $"Removed {setter.Entries!.RemoveAll(Utility.IsNullEntry)} null entries from {setter.EditorID} [{formKey}]{Environment.NewLine}"
+                        );
+                    else
+                        setter.Entries!.RemoveAll(Utility.IsNullEntry);
                     return true;
                 }
 
@@ -46,12 +57,38 @@ namespace leveledlistresolver
             var highest = extentContexts[0].Record;
             var lowest = Program.LinkCache.GetLowestOverride<ILeveledSpellGetter>(formKey);
 
+            bool hasConflict = false;
+            foreach (var (_, record) in extentContexts[1..])
+            {
+                if (
+                    !record.Equals(lowest, LvSpMask)
+                    || !Utility.UnsortedEqual(record.Entries, lowest.Entries)
+                )
+                {
+                    hasConflict = true;
+                    break;
+                }
+            }
+
+            if (!hasConflict)
+            {
+                if (Program.Settings.VerboseLogging)
+                    Console.WriteLine(
+                        $"Skipped {highest.EditorID} [{formKey}] - no conflict detected\n"
+                    );
+                return false;
+            }
+
             var copy = highest.DeepCopy();
             copy.FormVersion = 44;
             copy.VersionControl = Utility.Timestamp;
             copy.Entries = new();
 
-            bool a = !string.Equals(lowest.EditorID, copy.EditorID, StringComparison.InvariantCulture);
+            bool a = !string.Equals(
+                lowest.EditorID,
+                copy.EditorID,
+                StringComparison.InvariantCulture
+            );
             bool b = !copy.Equals(lowest, LvSpMask2);
 
             if (string.IsNullOrWhiteSpace(copy.EditorID))
@@ -62,7 +99,14 @@ namespace leveledlistresolver
 
             foreach (var (_, record) in extentContexts[1..])
             {
-                if (!a && !string.Equals(lowest.EditorID, record.EditorID, StringComparison.InvariantCulture))
+                if (
+                    !a
+                    && !string.Equals(
+                        lowest.EditorID,
+                        record.EditorID,
+                        StringComparison.InvariantCulture
+                    )
+                )
                 {
                     copy.EditorID = record.EditorID;
                     a = true;
@@ -77,14 +121,27 @@ namespace leveledlistresolver
             }
 
             List<ILeveledSpellEntryGetter> entries = new();
-            if (lowest.Entries is { Count: > 0 } && extentContexts.All(static i => i.Record.Entries is { Count: > 0 }))
+            if (
+                lowest.Entries is { Count: > 0 }
+                && extentContexts.All(static i => i.Record.Entries is { Count: > 0 })
+            )
             {
                 var e = (IEnumerable<ILeveledSpellEntryGetter>)lowest.Entries!;
-                var intersection = extentContexts.Aggregate(e, (i, k) => i.IntersectExt(k.Record.Entries));
+                var intersection = extentContexts.Aggregate(
+                    e,
+                    (i, k) => i.IntersectExt(k.Record.Entries)
+                );
                 entries.AddRange(intersection);
             }
 
-            var disjunction = extentContexts.Aggregate(Enumerable.Empty<ILeveledSpellEntryGetter>(), (i, k) => i.Concat(k.Record.Entries?.DisjunctLeft(lowest.Entries).DisjunctLeft(i) ?? Enumerable.Empty<ILeveledSpellEntryGetter>()));
+            var disjunction = extentContexts.Aggregate(
+                Enumerable.Empty<ILeveledSpellEntryGetter>(),
+                (i, k) =>
+                    i.Concat(
+                        k.Record.Entries?.DisjunctLeft(lowest.Entries).DisjunctLeft(i)
+                            ?? Enumerable.Empty<ILeveledSpellEntryGetter>()
+                    )
+            );
             entries.AddRange(disjunction);
 
             if (Program.Settings.RemoveEmptySublists)
@@ -104,14 +161,19 @@ namespace leveledlistresolver
                         VersionControl = Utility.Timestamp,
                         ChanceNone = copy.ChanceNone,
                         Flags = copy.Flags,
-                        Entries = chunk.Select(static i => i.DeepCopy()).ToExtendedList()
+                        Entries = chunk.Select(static i => i.DeepCopy()).ToExtendedList(),
                     };
 
                     state.PatchMod.LeveledSpells.Add(lvsp);
 
                     LeveledSpellEntry entry = new()
                     {
-                        Data = new() { Level = 1, Reference = lvsp.ToLink(), Count = 1 }
+                        Data = new()
+                        {
+                            Level = 1,
+                            Reference = lvsp.ToLink(),
+                            Count = 1,
+                        },
                     };
 
                     copy.Entries.Add(entry);
@@ -123,25 +185,39 @@ namespace leveledlistresolver
                 copy.Entries.AddRange(entries.ConvertAll(static i => i.DeepCopy()));
             }
 
-            var modKeys = state.LoadOrder.ListedOrder
-                .Where(i => i.Mod?.LeveledSpells.ContainsKey(formKey) ?? false)
-                .Select(static i => i.ModKey).ToHashSet();
-
-            Console.WriteLine($"{copy.EditorID} [{formKey}]");
-            foreach (var ctx in extentContexts.Reverse())
+            if (Program.Settings.VerboseLogging)
             {
-                var masters = state.LoadOrder[ctx.ModKey].Mod?.MasterReferences.Select(static i => i.Master).Where(modKeys.Contains);
-                if (masters != null)
-                    Console.WriteLine($"{string.Join(" -> ", masters)} -> {ctx.ModKey}");
+                var modKeys = state
+                    .LoadOrder.ListedOrder.Where(i =>
+                        i.Mod?.LeveledSpells.ContainsKey(formKey) ?? false
+                    )
+                    .Select(static i => i.ModKey)
+                    .ToHashSet();
+
+                Console.WriteLine($"{copy.EditorID} [{formKey}]");
+                foreach (var ctx in extentContexts.Reverse())
+                {
+                    var masters = state
+                        .LoadOrder[ctx.ModKey]
+                        .Mod?.MasterReferences.Select(static i => i.Master)
+                        .Where(modKeys.Contains);
+                    if (masters != null)
+                        Console.WriteLine($"{string.Join(" -> ", masters)} -> {ctx.ModKey}");
+                }
             }
 
-            if (copy.Equals(highest, LvSpMask) && Utility.UnsortedEqual(copy.Entries, highest.Entries))
+            if (
+                copy.Equals(highest, LvSpMask)
+                && Utility.UnsortedEqual(copy.Entries, highest.Entries)
+            )
             {
-                Console.WriteLine($"Skipped {copy.EditorID}\n");
+                if (Program.Settings.VerboseLogging)
+                    Console.WriteLine($"Skipped {copy.EditorID}\n");
                 return false;
             }
 
-            Console.WriteLine();
+            if (Program.Settings.VerboseLogging)
+                Console.WriteLine();
             setter = copy;
             return true;
         }

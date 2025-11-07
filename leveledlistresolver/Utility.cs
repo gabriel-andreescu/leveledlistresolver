@@ -1,24 +1,30 @@
-﻿using Mutagen.Bethesda;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
-using Mutagen.Bethesda.Plugins.Aspects;
 using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
-using Mutagen.Bethesda.Synthesis;
 using Noggog;
-using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.Diagnostics;
-using System.Linq;
 
 namespace leveledlistresolver
 {
     internal static class Utility
     {
-        public static uint Timestamp { get; } = (uint)(Math.Max(1, DateTime.Today.Year - 2000) << 9 | DateTime.Today.Month << 5 | DateTime.Today.Day);
-        
-        internal static IEnumerable<T> IntersectExt<T>(this IEnumerable<T> source, IEnumerable<T>? other, IEqualityComparer<T>? comparer = null) where T : class
+        public static uint Timestamp { get; } =
+            (uint)(
+                Math.Max(1, DateTime.Today.Year - 2000) << 9
+                | DateTime.Today.Month << 5
+                | DateTime.Today.Day
+            );
+
+        internal static IEnumerable<T> IntersectExt<T>(
+            this IEnumerable<T> source,
+            IEnumerable<T>? other,
+            IEqualityComparer<T>? comparer = null
+        )
+            where T : class
         {
             var _comparer = comparer ?? EqualityComparer<T>.Default;
 
@@ -51,7 +57,11 @@ namespace leveledlistresolver
             }
         }
 
-        internal static bool UnsortedEqual<T>(this IReadOnlyList<T>? first, IReadOnlyList<T>? second) where T : class
+        internal static bool UnsortedEqual<T>(
+            this IReadOnlyList<T>? first,
+            IReadOnlyList<T>? second
+        )
+            where T : class
         {
             if (first is null)
                 return second is null;
@@ -80,7 +90,12 @@ namespace leveledlistresolver
             return dictionary.Values.All(static i => i is 0);
         }
 
-        public static IEnumerable<T> DisjunctLeft<T>(this IEnumerable<T> left, IEnumerable<T>? right, IEqualityComparer<T>? comparer = null) where T : notnull
+        public static IEnumerable<T> DisjunctLeft<T>(
+            this IEnumerable<T> left,
+            IEnumerable<T>? right,
+            IEqualityComparer<T>? comparer = null
+        )
+            where T : notnull
         {
             if (right == null || !right.Any())
             {
@@ -107,7 +122,7 @@ namespace leveledlistresolver
 
                 yield return it;
             }
-        }    
+        }
 
         internal static bool IsNullEntry(this ILeveledItemEntryGetter entry)
         {
@@ -124,28 +139,44 @@ namespace leveledlistresolver
             return entry is { Data: null or { Reference.IsNull: true } };
         }
 
-        internal static bool IsNullOrEmptySublist(this ILeveledItemEntryGetter entry, ILinkCache linkCache)
+        internal static bool IsNullOrEmptySublist(
+            this ILeveledItemEntryGetter entry,
+            ILinkCache linkCache
+        )
         {
             if (entry is { Data: null or { Reference.IsNull: true } })
                 return true;
-            return entry.Data.Reference.TryResolve<ILeveledItemGetter>(linkCache) is { Entries: null or { Count: 0 } };
+            return entry.Data.Reference.TryResolve<ILeveledItemGetter>(linkCache)
+                is { Entries: null or { Count: 0 } };
         }
 
-        internal static bool IsNullOrEmptySublist(this ILeveledNpcEntryGetter entry, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache)
+        internal static bool IsNullOrEmptySublist(
+            this ILeveledNpcEntryGetter entry,
+            ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache
+        )
         {
             if (entry is { Data: null or { Reference.IsNull: true } })
                 return true;
-            return entry.Data.Reference.TryResolve<ILeveledNpcGetter>(linkCache) is { Entries: null or { Count: 0 } };
+            return entry.Data.Reference.TryResolve<ILeveledNpcGetter>(linkCache)
+                is { Entries: null or { Count: 0 } };
         }
 
-        internal static bool IsNullOrEmptySublist(this ILeveledSpellEntryGetter entry, ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache)
+        internal static bool IsNullOrEmptySublist(
+            this ILeveledSpellEntryGetter entry,
+            ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache
+        )
         {
             if (entry is { Data: null or { Reference.IsNull: true } })
                 return true;
-            return entry.Data.Reference.TryResolve<ILeveledSpellGetter>(linkCache) is { Entries: null or { Count: 0 } };
+            return entry.Data.Reference.TryResolve<ILeveledSpellGetter>(linkCache)
+                is { Entries: null or { Count: 0 } };
         }
 
-        internal static TGet GetLowestOverride<TGet>(this ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, FormKey formKey) where TGet : class, IMajorRecordGetter
+        internal static TGet GetLowestOverride<TGet>(
+            this ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+            FormKey formKey
+        )
+            where TGet : class, IMajorRecordGetter
         {
             var contexts = linkCache.ResolveAllSimpleContexts<TGet>(formKey).ToArray();
             var origin = contexts[^1].Record;
@@ -160,7 +191,11 @@ namespace leveledlistresolver
             var keys = Array.ConvertAll(contexts, static i => i.ModKey).ToHashSet();
             foreach (var ctx in contexts)
             {
-                var masters = linkCache.PriorityOrder.FirstOrDefault(i => i.ModKey == ctx.ModKey)?.MasterReferences.Select(static i => i.Master) ?? Enumerable.Empty<ModKey>();
+                var masters =
+                    linkCache
+                        .PriorityOrder.FirstOrDefault(i => i.ModKey == ctx.ModKey)
+                        ?.MasterReferences.Select(static i => i.Master)
+                    ?? Enumerable.Empty<ModKey>();
                 keys.IntersectWith(masters);
             }
 
@@ -170,7 +205,10 @@ namespace leveledlistresolver
             return origin;
         }
 
-        internal static IEnumerable<IModContext<TGet>> GetExtentContexts<TGet>(this ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache, FormKey formKey)
+        internal static IEnumerable<IModContext<TGet>> GetExtentContexts<TGet>(
+            this ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+            FormKey formKey
+        )
             where TGet : class, IMajorRecordGetter
         {
             var arr = linkCache.ResolveAllSimpleContexts<TGet>(formKey).ToArray();
@@ -189,22 +227,36 @@ namespace leveledlistresolver
             {
                 if (!refs.Contains(ctx.ModKey))
                 {
-                    var index = linkCache.ListedOrder.IndexOf(ctx.ModKey, static (i, k) => i.ModKey == k);
-                    refs.UnionWith(linkCache.ListedOrder[index].MasterReferences.Select(static i => i.Master) ?? Enumerable.Empty<ModKey>());
+                    var index = linkCache.ListedOrder.IndexOf(
+                        ctx.ModKey,
+                        static (i, k) => i.ModKey == k
+                    );
+                    refs.UnionWith(
+                        linkCache.ListedOrder[index].MasterReferences.Select(static i => i.Master)
+                        ?? Enumerable.Empty<ModKey>()
+                    );
                     refs.IntersectWith(keys);
                     yield return ctx;
                 }
             }
         }
 
-        internal static void Deconstruct<TGet>(this IModContext<TGet> modContext, out ModKey modKey, out TGet record)
+        internal static void Deconstruct<TGet>(
+            this IModContext<TGet> modContext,
+            out ModKey modKey,
+            out TGet record
+        )
             where TGet : class, IMajorRecordGetter
         {
             modKey = modContext.ModKey;
             record = modContext.Record;
         }
 
-        internal static void Deconstruct<TMod, TModGetter, TSet, TGet>(this IModContext<TMod, TModGetter, TSet, TGet> modContext, out ModKey modKey, out TGet record)
+        internal static void Deconstruct<TMod, TModGetter, TSet, TGet>(
+            this IModContext<TMod, TModGetter, TSet, TGet> modContext,
+            out ModKey modKey,
+            out TGet record
+        )
             where TModGetter : class, IModGetter
             where TMod : class, IMod, TModGetter
             where TGet : class, IMajorRecordGetter
