@@ -4,8 +4,10 @@ using System.Linq;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Plugins.Cache;
+using Mutagen.Bethesda.Plugins.Order;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
+using Mutagen.Bethesda.Synthesis;
 using Noggog;
 
 namespace leveledlistresolver
@@ -207,26 +209,38 @@ namespace leveledlistresolver
             return origin;
         }
 
+        /// <summary>
+        /// Returns mod contexts that should be merged based on master dependency relationships.
+        /// Filters out mods that don't actually depend on each other to prevent false conflicts.
+        /// </summary>
+        /// <remarks>
+        /// This method determines which mod overrides represent actual conflicts that need merging.
+        /// When multiple mods override the same record, they only conflict if they share a dependency chain.
+        /// This prevents merging unrelated mods that happen to modify the same record independently.
+        ///
+        /// Algorithm: For each mod context, collect its master references and intersect with the set
+        /// of mods that override this record. Only include contexts that reference other overriding mods.
+        /// </remarks>
         internal static IModContext<TGet>[] GetExtentContexts<TGet>(
             this ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
             FormKey formKey
         )
             where TGet : class, IMajorRecordGetter
         {
-            var arr = linkCache.ResolveAllSimpleContexts<TGet>(formKey).ToArray();
+            var contexts = linkCache.ResolveAllSimpleContexts<TGet>(formKey).ToArray();
 
-            if (arr.Length <= 2)
+            if (contexts.Length <= 2)
             {
-                return arr.Length > 0 ? [arr[0]] : [];
+                return contexts.Length > 0 ? [contexts[0]] : [];
             }
 
-            HashSet<ModKey> refs = [];
-            var keys = Array.ConvertAll(arr, i => i.ModKey);
+            HashSet<ModKey> dependencyKeys = [];
+            var overridingModKeys = Array.ConvertAll(contexts, i => i.ModKey);
             List<IModContext<TGet>> result = [];
 
-            foreach (var ctx in arr[..^1])
+            foreach (var ctx in contexts[..^1])
             {
-                if (!refs.Contains(ctx.ModKey))
+                if (!dependencyKeys.Contains(ctx.ModKey))
                 {
                     var index = linkCache.ListedOrder.IndexOf(
                         ctx.ModKey,
@@ -234,19 +248,198 @@ namespace leveledlistresolver
                     );
                     if (index >= 0)
                     {
-                        refs.UnionWith(
+                        dependencyKeys.UnionWith(
                             linkCache
                                 .ListedOrder[index]
                                 .MasterReferences.Select(static i => i.Master)
                             ?? Enumerable.Empty<ModKey>()
                         );
-                        refs.IntersectWith(keys);
+                        dependencyKeys.IntersectWith(overridingModKeys);
                     }
                     result.Add(ctx);
                 }
             }
 
             return [.. result];
+        }
+
+        internal static bool HasConflict<TGet, TEntry>(
+            IModContext<TGet>[] extentContexts,
+            TGet lowest,
+            Func<TGet, TGet, bool> equalsWithMask,
+            Func<TGet, IReadOnlyList<TEntry>?> getEntries
+        )
+            where TGet : class, IMajorRecordGetter
+            where TEntry : class
+        {
+            foreach (var (_, record) in extentContexts[1..])
+            {
+                if (
+                    !equalsWithMask(record, lowest)
+                    || !UnsortedEqual(getEntries(record), getEntries(lowest))
+                )
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        internal static void ResolveEditorIdConflict<TGet>(
+            IModContext<TGet>[] extentContexts,
+            TGet lowest,
+            IMajorRecord copy,
+            ref bool hasEditorIdConflict
+        )
+            where TGet : class, IMajorRecordGetter
+        {
+            if (string.IsNullOrWhiteSpace(copy.EditorID))
+            {
+                copy.EditorID = Guid.NewGuid().ToString("n");
+                hasEditorIdConflict = true;
+            }
+
+            foreach (var (_, record) in extentContexts[1..])
+            {
+                if (
+                    !hasEditorIdConflict
+                    && !string.Equals(
+                        lowest.EditorID,
+                        record.EditorID,
+                        StringComparison.InvariantCulture
+                    )
+                )
+                {
+                    copy.EditorID = record.EditorID;
+                    hasEditorIdConflict = true;
+                }
+            }
+        }
+
+        internal static void ResolvePropertyConflicts<TGet>(
+            IModContext<TGet>[] extentContexts,
+            TGet lowest,
+            Func<TGet, TGet, bool> equalsWithMask,
+            ref bool hasPropertiesConflict,
+            Action<TGet> applyProperties
+        )
+            where TGet : class, IMajorRecordGetter
+        {
+            foreach (var (_, record) in extentContexts[1..])
+            {
+                if (!hasPropertiesConflict && !equalsWithMask(lowest, record))
+                {
+                    applyProperties(record);
+                    hasPropertiesConflict = true;
+                }
+            }
+        }
+
+        internal static List<TEntry> MergeEntries<TGet, TEntry>(
+            IModContext<TGet>[] extentContexts,
+            TGet lowest,
+            Func<TGet, IReadOnlyList<TEntry>?> getEntries
+        )
+            where TGet : class, IMajorRecordGetter
+            where TEntry : class
+        {
+            List<TEntry> entries = [];
+
+            if (
+                getEntries(lowest) is { Count: > 0 }
+                && extentContexts.All(i => getEntries(i.Record) is { Count: > 0 })
+            )
+            {
+                var e = (IEnumerable<TEntry>)getEntries(lowest)!;
+                var intersection = extentContexts.Aggregate(
+                    e,
+                    (i, k) => i.IntersectExt(getEntries(k.Record))
+                );
+                entries.AddRange(intersection);
+            }
+
+            var disjunction = extentContexts.Aggregate(
+                Enumerable.Empty<TEntry>(),
+                (i, k) =>
+                    i.Concat(
+                        getEntries(k.Record)?.DisjunctLeft(getEntries(lowest)).DisjunctLeft(i)
+                            ?? Enumerable.Empty<TEntry>()
+                    )
+            );
+            entries.AddRange(disjunction);
+
+            return entries;
+        }
+
+        internal static void LogVerboseMergeInfo<TGet>(
+            IPatcherState<ISkyrimMod, ISkyrimModGetter> state,
+            IModContext<TGet>[] extentContexts,
+            FormKey formKey,
+            string? editorId,
+            Func<IModListingGetter<ISkyrimModGetter>, bool> containsKey
+        )
+            where TGet : class, IMajorRecordGetter
+        {
+            if (!Program.Settings.VerboseLogging)
+                return;
+
+            var modKeys = state
+                .LoadOrder.ListedOrder.Where(containsKey)
+                .Select(static i => i.ModKey)
+                .ToHashSet();
+
+            Console.WriteLine($"{editorId} [{formKey}]");
+            foreach (var ctx in extentContexts.Reverse())
+            {
+                if (!state.LoadOrder.ContainsKey(ctx.ModKey))
+                    continue;
+
+                var masters = state
+                    .LoadOrder[ctx.ModKey]
+                    .Mod?.MasterReferences.Select(static i => i.Master)
+                    .Where(modKeys.Contains);
+                if (masters != null)
+                    Console.WriteLine($"{string.Join(" -> ", masters)} -> {ctx.ModKey}");
+            }
+        }
+
+        internal static bool ShouldSkipUnchanged<TGet, TEntry>(
+            TGet highest,
+            IMajorRecordGetter copy,
+            Func<IMajorRecordGetter, TGet, bool> equalsWithMask,
+            Func<TGet, IReadOnlyList<TEntry>?> getHighestEntries,
+            Func<IMajorRecordGetter, IReadOnlyList<TEntry>?> getCopyEntries,
+            string? editorId
+        )
+            where TGet : class, IMajorRecordGetter
+            where TEntry : class
+        {
+            if (
+                equalsWithMask(copy, highest)
+                && UnsortedEqual(getCopyEntries(copy), getHighestEntries(highest))
+            )
+            {
+                if (Program.Settings.VerboseLogging)
+                    Console.WriteLine($"Skipped {editorId}\n");
+                return true;
+            }
+            return false;
+        }
+
+        internal static void ProcessLeveledListEntries<TEntry>(
+            List<TEntry> entries,
+            ILinkCache<ISkyrimMod, ISkyrimModGetter> linkCache,
+            Func<TEntry, bool> isNullEntry,
+            Func<TEntry, ILinkCache<ISkyrimMod, ISkyrimModGetter>, bool> isNullOrEmptySublist,
+            Func<TEntry, int> getLevel
+        )
+            where TEntry : class
+        {
+            if (Program.Settings.RemoveEmptySublists)
+                entries.RemoveAll(new Predicate<TEntry>(e => isNullOrEmptySublist(e, linkCache)));
+            else
+                entries.RemoveAll(new Predicate<TEntry>(isNullEntry));
+            entries.Sort((i, k) => getLevel(i).CompareTo(getLevel(k)));
         }
 
         internal static void Deconstruct<TGet>(

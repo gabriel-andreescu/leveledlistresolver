@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -11,7 +10,7 @@ namespace leveledlistresolver
 {
     sealed partial class RecordPatcher : IRecordPatcher<ILeveledItemGetter, LeveledItem>
     {
-        readonly LeveledItem.TranslationMask LvliMask = new(true)
+        static readonly LeveledItem.TranslationMask LvliMask = new(true)
         {
             FormVersion = false,
             VersionControl = false,
@@ -19,7 +18,7 @@ namespace leveledlistresolver
             Entries = false,
         };
 
-        readonly LeveledItem.TranslationMask LvliMask2 = new(false)
+        static readonly LeveledItem.TranslationMask LvliMask2 = new(false)
         {
             ChanceNone = true,
             Flags = true,
@@ -59,20 +58,14 @@ namespace leveledlistresolver
             var highest = extentContexts[0].Record;
             var lowest = state.LinkCache.GetLowestOverride<ILeveledItemGetter>(formKey);
 
-            bool hasConflict = false;
-            foreach (var (_, record) in extentContexts[1..])
-            {
-                if (
-                    !record.Equals(lowest, LvliMask)
-                    || !Utility.UnsortedEqual(record.Entries, lowest.Entries)
+            if (
+                !Utility.HasConflict(
+                    extentContexts,
+                    lowest,
+                    (r, l) => r.Equals(l, LvliMask),
+                    static r => r.Entries
                 )
-                {
-                    hasConflict = true;
-                    break;
-                }
-            }
-
-            if (!hasConflict)
+            )
             {
                 if (Program.Settings.VerboseLogging)
                     Console.WriteLine(
@@ -93,65 +86,30 @@ namespace leveledlistresolver
             );
             bool hasPropertiesConflict = !copy.Equals(lowest, LvliMask2);
 
-            if (string.IsNullOrWhiteSpace(copy.EditorID))
-            {
-                copy.EditorID = Guid.NewGuid().ToString("n");
-                hasEditorIdConflict = true;
-            }
+            Utility.ResolveEditorIdConflict(extentContexts, lowest, copy, ref hasEditorIdConflict);
 
-            foreach (var (_, record) in extentContexts[1..])
-            {
-                if (
-                    !hasEditorIdConflict
-                    && !string.Equals(
-                        lowest.EditorID,
-                        record.EditorID,
-                        StringComparison.InvariantCulture
-                    )
-                )
-                {
-                    copy.EditorID = record.EditorID;
-                    hasEditorIdConflict = true;
-                }
-
-                if (!hasPropertiesConflict && !lowest.Equals(record, LvliMask2))
+            Utility.ResolvePropertyConflicts(
+                extentContexts,
+                lowest,
+                (l, r) => l.Equals(r, LvliMask2),
+                ref hasPropertiesConflict,
+                record =>
                 {
                     copy.ChanceNone = record.ChanceNone;
                     copy.Flags = record.Flags;
                     copy.Global.SetTo(record.Global);
-                    hasPropertiesConflict = true;
                 }
-            }
-
-            List<ILeveledItemEntryGetter> entries = [];
-            if (
-                lowest.Entries is { Count: > 0 }
-                && extentContexts.All(static i => i.Record.Entries is { Count: > 0 })
-            )
-            {
-                var e = (IEnumerable<ILeveledItemEntryGetter>)lowest.Entries!;
-                var intersection = extentContexts.Aggregate(
-                    e,
-                    (i, k) => i.IntersectExt(k.Record.Entries)
-                );
-                entries.AddRange(intersection);
-            }
-
-            var disjunction = extentContexts.Aggregate(
-                Enumerable.Empty<ILeveledItemEntryGetter>(),
-                (i, k) =>
-                    i.Concat(
-                        k.Record.Entries?.DisjunctLeft(lowest.Entries).DisjunctLeft(i)
-                            ?? Enumerable.Empty<ILeveledItemEntryGetter>()
-                    )
             );
-            entries.AddRange(disjunction);
 
-            if (Program.Settings.RemoveEmptySublists)
-                entries.RemoveAll(i => i.IsNullOrEmptySublist(state.LinkCache));
-            else
-                entries.RemoveAll(Utility.IsNullEntry);
-            entries.Sort(static (i, k) => (i.Data?.Level ?? 0).CompareTo(k.Data?.Level));
+            var entries = Utility.MergeEntries(extentContexts, lowest, static r => r.Entries);
+
+            Utility.ProcessLeveledListEntries(
+                entries,
+                state.LinkCache,
+                static e => e.IsNullEntry(),
+                static (e, lc) => e.IsNullOrEmptySublist(lc),
+                static e => e.Data?.Level ?? 0
+            );
 
             if (entries.Count > 255)
             {
@@ -189,37 +147,25 @@ namespace leveledlistresolver
                 copy.Entries.AddRange(entries.Select(static i => i.DeepCopy()));
             }
 
-            if (Program.Settings.VerboseLogging)
-            {
-                var modKeys = state
-                    .LoadOrder.ListedOrder.Where(i =>
-                        i.Mod?.LeveledItems.ContainsKey(formKey) ?? false
-                    )
-                    .Select(static i => i.ModKey)
-                    .ToHashSet();
-
-                Console.WriteLine($"{copy.EditorID} [{formKey}]");
-                foreach (var ctx in extentContexts.Reverse())
-                {
-                    if (!state.LoadOrder.ContainsKey(ctx.ModKey))
-                        continue;
-
-                    var masters = state
-                        .LoadOrder[ctx.ModKey]
-                        .Mod?.MasterReferences.Select(static i => i.Master)
-                        .Where(modKeys.Contains);
-                    if (masters != null)
-                        Console.WriteLine($"{string.Join(" -> ", masters)} -> {ctx.ModKey}");
-                }
-            }
+            Utility.LogVerboseMergeInfo(
+                state,
+                extentContexts,
+                formKey,
+                copy.EditorID,
+                i => i.Mod?.LeveledItems.ContainsKey(formKey) ?? false
+            );
 
             if (
-                copy.Equals(highest, LvliMask)
-                && Utility.UnsortedEqual(copy.Entries, highest.Entries)
+                Utility.ShouldSkipUnchanged(
+                    highest,
+                    copy,
+                    (c, h) => ((LeveledItem)c).Equals(h, LvliMask),
+                    static h => h.Entries,
+                    static c => ((LeveledItem)c).Entries,
+                    copy.EditorID
+                )
             )
             {
-                if (Program.Settings.VerboseLogging)
-                    Console.WriteLine($"Skipped {copy.EditorID}\n");
                 return false;
             }
 

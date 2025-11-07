@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
@@ -35,20 +34,14 @@ namespace leveledlistresolver
             var highest = extentContexts[0].Record;
             var lowest = state.LinkCache.GetLowestOverride<IContainerGetter>(formKey);
 
-            bool hasConflict = false;
-            foreach (var (_, record) in extentContexts[1..])
-            {
-                if (
-                    !record.Equals(lowest, ContMask)
-                    || !Utility.UnsortedEqual(record.Items, lowest.Items)
+            if (
+                !Utility.HasConflict(
+                    extentContexts,
+                    lowest,
+                    (r, l) => r.Equals(l, ContMask),
+                    static r => r.Items
                 )
-                {
-                    hasConflict = true;
-                    break;
-                }
-            }
-
-            if (!hasConflict)
+            )
             {
                 if (Program.Settings.VerboseLogging)
                     Console.WriteLine(
@@ -69,94 +62,46 @@ namespace leveledlistresolver
             );
             bool hasFlagsConflict = !copy.Equals(lowest, ContMask2);
 
-            if (string.IsNullOrWhiteSpace(copy.EditorID))
-            {
-                copy.EditorID = Guid.NewGuid().ToString("n");
-                hasEditorIdConflict = true;
-            }
+            Utility.ResolveEditorIdConflict(extentContexts, lowest, copy, ref hasEditorIdConflict);
 
-            foreach (var (_, record) in extentContexts[1..])
-            {
-                if (
-                    !hasEditorIdConflict
-                    && !string.Equals(
-                        lowest.EditorID,
-                        record.EditorID,
-                        StringComparison.InvariantCulture
-                    )
-                )
-                {
-                    copy.EditorID = record.EditorID;
-                    hasEditorIdConflict = true;
-                }
-
-                if (!hasFlagsConflict && !lowest.Equals(record, ContMask2))
-                {
-                    copy.Flags = record.Flags;
-                    hasFlagsConflict = true;
-                }
-            }
-
-            List<IContainerEntryGetter> items = [];
-            if (
-                lowest.Items is { Count: > 0 }
-                && extentContexts.All(static i => i.Record.Items is { Count: > 0 })
-            )
-            {
-                var e = (IEnumerable<IContainerEntryGetter>)lowest.Items!;
-                var intersection = extentContexts.Aggregate(
-                    e,
-                    (i, k) => i.IntersectExt(k.Record.Items)
-                );
-                items.AddRange(intersection);
-            }
-
-            var disjunction = extentContexts.Aggregate(
-                Enumerable.Empty<IContainerEntryGetter>(),
-                (i, k) =>
-                    i.Concat(
-                        k.Record.Items?.DisjunctLeft(lowest.Items).DisjunctLeft(i)
-                            ?? Enumerable.Empty<IContainerEntryGetter>()
-                    )
+            Utility.ResolvePropertyConflicts(
+                extentContexts,
+                lowest,
+                (l, r) => l.Equals(r, ContMask2),
+                ref hasFlagsConflict,
+                record => copy.Flags = record.Flags
             );
-            items.AddRange(disjunction);
+
+            var items = Utility.MergeEntries(extentContexts, lowest, static r => r.Items);
 
             copy.Items.AddRange(items.Select(static i => i.DeepCopy()));
 
-            if (Program.Settings.VerboseLogging)
-            {
-                var modKeys = state
-                    .LoadOrder.ListedOrder.Where(i =>
-                        i.Mod?.Containers.ContainsKey(formKey) ?? false
-                    )
-                    .Select(static i => i.ModKey)
-                    .ToHashSet();
+            Utility.LogVerboseMergeInfo(
+                state,
+                extentContexts,
+                formKey,
+                copy.EditorID,
+                i => i.Mod?.Containers.ContainsKey(formKey) ?? false
+            );
 
-                Console.WriteLine($"{copy.EditorID} [{formKey}]");
-                foreach (var ctx in extentContexts.Reverse())
-                {
-                    if (!state.LoadOrder.ContainsKey(ctx.ModKey))
-                        continue;
-                    
-                    var masters = state
-                        .LoadOrder[ctx.ModKey]
-                        .Mod?.MasterReferences.Select(static i => i.Master)
-                        .Where(modKeys.Contains);
-                    if (masters != null)
-                        Console.WriteLine($"{string.Join(" -> ", masters)} -> {ctx.ModKey}");
-                }
-            }
-
-            if (copy.Equals(highest, ContMask) && Utility.UnsortedEqual(copy.Items, highest.Items))
+            if (
+                Utility.ShouldSkipUnchanged(
+                    highest,
+                    copy,
+                    (c, h) => ((Container)c).Equals(h, ContMask),
+                    static h => h.Items,
+                    static c => ((Container)c).Items,
+                    copy.EditorID
+                )
+            )
             {
-                if (Program.Settings.VerboseLogging)
-                    Console.WriteLine($"Skipped {copy.EditorID}\n");
                 return false;
             }
 
             if (Program.Settings.VerboseLogging)
                 Console.WriteLine();
             setter = copy;
+            state.PatchMod.Containers.Set(copy);
             return true;
         }
     }
