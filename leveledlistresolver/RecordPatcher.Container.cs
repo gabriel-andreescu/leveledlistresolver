@@ -62,7 +62,7 @@ namespace leveledlistresolver
             var copy = highest.DeepCopy();
             copy.FormVersion = 44;
             copy.VersionControl = Utility.Timestamp;
-            copy.Items = new();
+            copy.Items = [];
 
             bool a = !string.Equals(
                 lowest.EditorID,
@@ -99,7 +99,7 @@ namespace leveledlistresolver
                 }
             }
 
-            List<IContainerEntryGetter> items = new();
+            List<IContainerEntryGetter> items = [];
             if (
                 lowest.Items is { Count: > 0 }
                 && extentContexts.All(static i => i.Record.Items is { Count: > 0 })

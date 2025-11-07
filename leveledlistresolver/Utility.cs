@@ -31,9 +31,9 @@ namespace leveledlistresolver
             if (!source.Any() || other == null || !other.Any())
                 yield break;
 
-            var set = new HashSet<T>(source, _comparer);
+            HashSet<T> set = new(source, _comparer);
             set.IntersectWith(other);
-            var dict = new Dictionary<T, int>(_comparer);
+            Dictionary<T, int> dict = new(_comparer);
 
             foreach (var it in other)
             {
@@ -72,7 +72,7 @@ namespace leveledlistresolver
             if (first.Count != second.Count)
                 return false;
 
-            var dictionary = new Dictionary<T, int>();
+            Dictionary<T, int> dictionary = [];
 
             foreach (var it in first)
             {
@@ -104,7 +104,7 @@ namespace leveledlistresolver
                 yield break;
             }
 
-            var dict = new Dictionary<T, int>(comparer ?? EqualityComparer<T>.Default);
+            Dictionary<T, int> dict = new(comparer ?? EqualityComparer<T>.Default);
 
             foreach (var it in right)
             {
@@ -222,7 +222,7 @@ namespace leveledlistresolver
                 yield break;
             }
 
-            var refs = new HashSet<ModKey>();
+            HashSet<ModKey> refs = [];
             var keys = Array.ConvertAll(arr, i => i.ModKey);
 
             foreach (var ctx in arr[..^1])

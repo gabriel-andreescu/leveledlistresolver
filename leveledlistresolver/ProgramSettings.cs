@@ -10,7 +10,7 @@ namespace leveledlistresolver
         [Tooltip(
             "List of plugin filenames to exclude (e.g., MyMod.esp). Plugins dependent on blacklisted plugins will also be excluded."
         )]
-        public List<string> BlacklistedPluginNames { get; set; } = new();
+        public List<string> BlacklistedPluginNames { get; set; } = [];
 
         [SettingName("Remove Empty Sublists")]
         [Tooltip(
@@ -26,7 +26,7 @@ namespace leveledlistresolver
 
         public HashSet<ModKey> GetBlacklistedPlugins()
         {
-            var plugins = new HashSet<ModKey>();
+            HashSet<ModKey> plugins = [];
             foreach (var pluginName in BlacklistedPluginNames)
             {
                 if (
