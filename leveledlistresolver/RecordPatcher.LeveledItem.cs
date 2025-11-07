@@ -39,6 +39,9 @@ namespace leveledlistresolver
                 .ToArray();
             if (extentContexts.Length < 2)
             {
+                if (extentContexts.Length == 0)
+                    return false;
+                
                 var winning = extentContexts[0].Record;
                 if (winning.Entries?.Any(static i => i.IsNullEntry()) ?? false)
                 {
@@ -100,7 +103,7 @@ namespace leveledlistresolver
 
             foreach (var (_, record) in extentContexts[1..])
             {
-                if (!a && !string.Equals(lowest.EditorID, record.EditorID))
+                if (!a && !string.Equals(lowest.EditorID, record.EditorID, StringComparison.InvariantCulture))
                 {
                     copy.EditorID = record.EditorID;
                     a = true;

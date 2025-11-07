@@ -179,12 +179,14 @@ namespace leveledlistresolver
             where TGet : class, IMajorRecordGetter
         {
             var contexts = linkCache.ResolveAllSimpleContexts<TGet>(formKey).ToArray();
+            
+            if (contexts.Length == 0)
+                throw new InvalidOperationException();
+            
             var origin = contexts[^1].Record;
 
             if (contexts.Length <= 2)
             {
-                if (contexts.Length == 0)
-                    throw new InvalidOperationException();
                 return origin;
             }
 
@@ -231,11 +233,14 @@ namespace leveledlistresolver
                         ctx.ModKey,
                         static (i, k) => i.ModKey == k
                     );
-                    refs.UnionWith(
-                        linkCache.ListedOrder[index].MasterReferences.Select(static i => i.Master)
-                        ?? Enumerable.Empty<ModKey>()
-                    );
-                    refs.IntersectWith(keys);
+                    if (index >= 0)
+                    {
+                        refs.UnionWith(
+                            linkCache.ListedOrder[index].MasterReferences.Select(static i => i.Master)
+                            ?? Enumerable.Empty<ModKey>()
+                        );
+                        refs.IntersectWith(keys);
+                    }
                     yield return ctx;
                 }
             }

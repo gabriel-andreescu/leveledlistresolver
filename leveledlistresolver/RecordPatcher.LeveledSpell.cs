@@ -38,6 +38,9 @@ namespace leveledlistresolver
                 .ToArray();
             if (extentContexts.Length < 2)
             {
+                if (extentContexts.Length == 0)
+                    return false;
+                
                 var winning = extentContexts[0].Record;
                 if (winning.Entries?.Any(static i => i.IsNullEntry()) ?? false)
                 {

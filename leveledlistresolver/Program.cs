@@ -41,7 +41,7 @@ namespace leveledlistresolver
             );
             Console.WriteLine();
 
-            using var loadOrder = state.LoadOrder;
+            var loadOrder = state.LoadOrder;
 
             var blacklistedPlugins = Settings.GetBlacklistedPlugins();
 
