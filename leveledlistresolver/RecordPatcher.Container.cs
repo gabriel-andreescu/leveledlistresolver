@@ -26,6 +26,7 @@ namespace leveledlistresolver
             setter = default;
 
             var extentContexts = state.LinkCache.GetExtentContexts<IContainerGetter>(formKey);
+
             if (extentContexts.Length < 2)
             {
                 return false;
@@ -97,7 +98,6 @@ namespace leveledlistresolver
             if (Program.Settings.VerboseLogging)
                 Console.WriteLine();
             setter = copy;
-            state.PatchMod.Containers.Set(copy);
             return true;
         }
     }

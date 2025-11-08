@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
@@ -109,8 +110,10 @@ namespace leveledlistresolver
                 static e => e.Data?.Level ?? 0
             );
 
+            List<LeveledNpc>? createdChunks = null;
             if (entries.Count > 255)
             {
+                createdChunks = new();
                 int i = 1;
                 foreach (var chunk in entries.Chunk(255))
                 {
@@ -125,6 +128,7 @@ namespace leveledlistresolver
                     };
 
                     state.PatchMod.LeveledNpcs.Add(lvln);
+                    createdChunks.Add(lvln);
 
                     LeveledNpcEntry entry = new()
                     {
@@ -164,6 +168,12 @@ namespace leveledlistresolver
                 )
             )
             {
+                state.PatchMod.LeveledNpcs.Remove(copy.FormKey);
+                if (createdChunks != null)
+                {
+                    foreach (var chunk in createdChunks)
+                        state.PatchMod.LeveledNpcs.Remove(chunk.FormKey);
+                }
                 return false;
             }
 
