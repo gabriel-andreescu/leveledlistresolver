@@ -43,10 +43,6 @@ namespace leveledlistresolver
                 )
             )
             {
-                if (Program.Settings.VerboseLogging)
-                    Console.WriteLine(
-                        $"Skipped {highest.EditorID} [{formKey}] - no conflict detected\n"
-                    );
                 return false;
             }
 

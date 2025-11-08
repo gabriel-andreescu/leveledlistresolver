@@ -33,25 +33,27 @@ namespace leveledlistresolver
             setter = default;
 
             var extentContexts = state.LinkCache.GetExtentContexts<ILeveledSpellGetter>(formKey);
-            if (extentContexts.Length < 2)
+
+            if (
+                Utility.TryRemoveNullEntries<
+                    ILeveledSpellGetter,
+                    LeveledSpell,
+                    ILeveledSpellEntryGetter,
+                    LeveledSpellEntry
+                >(
+                    extentContexts,
+                    formKey,
+                    state,
+                    (s, w) => s.PatchMod.LeveledSpells.GetOrAddAsOverride(w),
+                    static r => r.Entries,
+                    static e => e.IsNullEntry(),
+                    static s => s.Entries,
+                    static e => e.IsNullEntry(),
+                    out setter
+                )
+            )
             {
-                if (extentContexts.Length == 0)
-                    return false;
-
-                var winning = extentContexts[0].Record;
-                if (winning.Entries?.Any(static i => i.IsNullEntry()) ?? false)
-                {
-                    setter = state.PatchMod.LeveledSpells.GetOrAddAsOverride(winning);
-                    if (Program.Settings.VerboseLogging)
-                        Console.WriteLine(
-                            $"Removed {setter.Entries!.RemoveAll(Utility.IsNullEntry)} null entries from {setter.EditorID} [{formKey}]{Environment.NewLine}"
-                        );
-                    else
-                        setter.Entries!.RemoveAll(Utility.IsNullEntry);
-                    return true;
-                }
-
-                return false;
+                return true;
             }
 
             var highest = extentContexts[0].Record;
@@ -66,10 +68,6 @@ namespace leveledlistresolver
                 )
             )
             {
-                if (Program.Settings.VerboseLogging)
-                    Console.WriteLine(
-                        $"Skipped {highest.EditorID} [{formKey}] - no conflict detected\n"
-                    );
                 return false;
             }
 

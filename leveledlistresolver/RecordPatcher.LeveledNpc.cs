@@ -34,25 +34,27 @@ namespace leveledlistresolver
             setter = default;
 
             var extentContexts = state.LinkCache.GetExtentContexts<ILeveledNpcGetter>(formKey);
-            if (extentContexts.Length < 2)
+
+            if (
+                Utility.TryRemoveNullEntries<
+                    ILeveledNpcGetter,
+                    LeveledNpc,
+                    ILeveledNpcEntryGetter,
+                    LeveledNpcEntry
+                >(
+                    extentContexts,
+                    formKey,
+                    state,
+                    (s, w) => s.PatchMod.LeveledNpcs.GetOrAddAsOverride(w),
+                    static r => r.Entries,
+                    static e => e.IsNullEntry(),
+                    static s => s.Entries,
+                    static e => e.IsNullEntry(),
+                    out setter
+                )
+            )
             {
-                if (extentContexts.Length == 0)
-                    return false;
-
-                var winning = extentContexts[0].Record;
-                if (winning.Entries?.Any(static i => i.IsNullEntry()) ?? false)
-                {
-                    setter = state.PatchMod.LeveledNpcs.GetOrAddAsOverride(winning);
-                    if (Program.Settings.VerboseLogging)
-                        Console.WriteLine(
-                            $"Removed {setter.Entries!.RemoveAll(Utility.IsNullEntry)} null entries from {setter.EditorID} [{formKey}]{Environment.NewLine}"
-                        );
-                    else
-                        setter.Entries!.RemoveAll(Utility.IsNullEntry);
-                    return true;
-                }
-
-                return false;
+                return true;
             }
 
             var highest = extentContexts[0].Record;
@@ -67,10 +69,6 @@ namespace leveledlistresolver
                 )
             )
             {
-                if (Program.Settings.VerboseLogging)
-                    Console.WriteLine(
-                        $"Skipped {highest.EditorID} [{formKey}] - no conflict detected\n"
-                    );
                 return false;
             }
 

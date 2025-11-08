@@ -442,6 +442,59 @@ namespace leveledlistresolver
             entries.Sort((i, k) => getLevel(i).CompareTo(getLevel(k)));
         }
 
+        /// <summary>
+        /// Attempts to remove null entries from a single-mod override.
+        /// Returns true if null entries were found and removed, false otherwise.
+        /// </summary>
+        /// <remarks>
+        /// This handles the edge case where a record is only modified by one mod
+        /// (no conflict) but contains null entries that should be cleaned up.
+        /// Early-returns to avoid unnecessary merge logic.
+        /// </remarks>
+        internal static bool TryRemoveNullEntries<TGetter, TSetter, TEntryGetter, TMutableEntry>(
+            IModContext<TGetter>[] extentContexts,
+            FormKey formKey,
+            IPatcherState<ISkyrimMod, ISkyrimModGetter> state,
+            Func<IPatcherState<ISkyrimMod, ISkyrimModGetter>, TGetter, TSetter> getOrAddOverride,
+            Func<TGetter, IReadOnlyList<TEntryGetter>?> getEntries,
+            Func<TEntryGetter, bool> isNullEntry,
+            Func<TSetter, ExtendedList<TMutableEntry>?> getMutableEntries,
+            Func<TMutableEntry, bool> isMutableNullEntry,
+            out TSetter? setter
+        )
+            where TGetter : class, IMajorRecordGetter
+            where TSetter : class, IMajorRecord, TGetter
+            where TEntryGetter : class
+            where TMutableEntry : class, TEntryGetter
+        {
+            setter = default;
+
+            if (extentContexts.Length < 2)
+            {
+                if (extentContexts.Length == 0)
+                    return false;
+
+                var winning = extentContexts[0].Record;
+                if (getEntries(winning)?.Any(isNullEntry) ?? false)
+                {
+                    setter = getOrAddOverride(state, winning);
+                    var entries = getMutableEntries(setter);
+
+                    if (Program.Settings.VerboseLogging)
+                        Console.WriteLine(
+                            $"Removed {entries!.RemoveAll(new Predicate<TMutableEntry>(isMutableNullEntry))} null entries from {setter.EditorID} [{formKey}]{Environment.NewLine}"
+                        );
+                    else
+                        entries!.RemoveAll(new Predicate<TMutableEntry>(isMutableNullEntry));
+
+                    return true;
+                }
+
+                return false;
+            }
+            return false;
+        }
+
         internal static void Deconstruct<TGet>(
             this IModContext<TGet> modContext,
             out ModKey modKey,
